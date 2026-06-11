@@ -257,14 +257,9 @@ YDL_OPTIONS = {
     "format"         : "bestaudio/best",
     "noplaylist"     : True,
     "quiet"          : True,
-    "default_search" : "ytsearch",
+    "default_search" : "scsearch",
     "source_address" : "0.0.0.0",
-    "extractor_args" : {"youtube": {"skip": ["dash", "hls"]}},
-    "http_headers"   : {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    },
 }
-
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options"       : "-vn",
