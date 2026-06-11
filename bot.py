@@ -24,19 +24,6 @@ MUTED_ROLE_NAME      = "Muted"
 #  AUTO RESPONSES (built-in defaults)
 # ============================================================
 AUTO_RESPONSES = {
-    "hello"       : "Hey there! 👋 Welcome to the server!",
-    "hi"          : "Hi! 👋 How can I help you?",
-    "help"        : "Need help? Check out our rules channel or ask a mod! 🙂",
-    "rules"       : "Please check the #rules channel for our server rules! 📜",
-    "how are you" : "I'm a bot, but I'm doing great! 🤖",
-    "good morning": "Good morning! ☀️ Hope you have a great day!",
-    "good night"  : "Good night! 🌙 Sleep well!",
-    "discord"     : "This is an awesome Discord server! Glad you're here 😄",
-    "thanks"      : "You're welcome! 😊",
-    "thank you"   : "Happy to help! 😊",
-    "bye"         : "See you later! 👋",
-    "lol"         : "😄",
-    "gg"          : "GG! 🎮",
 }
 
 # ============================================================
@@ -272,6 +259,10 @@ YDL_OPTIONS = {
     "quiet"          : True,
     "default_search" : "ytsearch",
     "source_address" : "0.0.0.0",
+    "extractor_args" : {"youtube": {"skip": ["dash", "hls"]}},
+    "http_headers"   : {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
 }
 
 FFMPEG_OPTIONS = {
@@ -556,9 +547,21 @@ async def ban(ctx, member: discord.Member, *, reason="No reason provided"):
 
 @bot.command()
 @has_mod_role()
-async def timeout(ctx, member: discord.Member, minutes: int, *, reason="No reason provided"):
-    await member.timeout(datetime.timedelta(minutes=minutes), reason=reason)
-    await ctx.send(f"⏱️ {member.mention} timed out for {minutes} min. Reason: {reason}")
+async def timeout(ctx, member: discord.Member, duration: str, *, reason="No reason provided"):
+    units = {"m": 1, "h": 60, "y": 525600}
+    unit  = duration[-1].lower()
+    if unit not in units:
+        await ctx.send("❌ Use format like `1m`, `2h`, or `1y`")
+        return
+    try:
+        amount = int(duration[:-1])
+    except ValueError:
+        await ctx.send("❌ Use format like `1m`, `2h`, or `1y`")
+        return
+    minutes  = amount * units[unit]
+    delta    = datetime.timedelta(minutes=minutes)
+    await member.timeout(delta, reason=reason)
+    await ctx.send(f"⏱️ {member.mention} timed out for **{duration}**. Reason: {reason}")
 
 # ============================================================
 #  ERROR HANDLING
