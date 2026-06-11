@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ============================================================
-#  CONFIG — edit these to match your friend's server
+#  CONFIG
 # ============================================================
 TOKEN                = os.getenv("DISCORD_TOKEN")
 WELCOME_CHANNEL_NAME = "welcome"
@@ -19,20 +19,18 @@ LEAVE_CHANNEL_NAME   = "welcome"
 BOOST_CHANNEL_NAME   = "welcome"
 MOD_ROLES            = ["Admin", "Moderator"]
 MUTED_ROLE_NAME      = "Muted"
-
-# ============================================================
-#  AUTO RESPONSES (built-in defaults)
-# ============================================================
-AUTO_RESPONSES = {
-}
+MODLOG_CHANNEL_NAME  = "mod-logs"
 
 # ============================================================
 #  DATA FILES
 # ============================================================
-WARNINGS_FILE   = "warnings.json"
-MSG_COUNT_FILE  = "message_counts.json"
-INVITES_FILE    = "invites.json"
-AR_FILE         = "auto_responses.json"   # dynamic AR saved here
+WARNINGS_FILE  = "warnings.json"
+MSG_COUNT_FILE = "message_counts.json"
+INVITES_FILE   = "invites.json"
+AR_FILE        = "auto_responses.json"
+MODLOG_FILE    = "modlogs.json"
+
+AUTO_RESPONSES = {}
 
 def load_json(filename):
     if os.path.exists(filename):
@@ -45,6 +43,48 @@ def save_json(filename, data):
         json.dump(data, f, indent=2)
 
 # ============================================================
+#  MODLOG HELPER
+# ============================================================
+async def send_modlog(guild, action, moderator, target, reason, duration):
+    logs = load_json(MODLOG_FILE)
+    gid  = str(guild.id)
+    uid  = str(target.id)
+    if gid not in logs: logs[gid] = {}
+    if uid not in logs[gid]: logs[gid][uid] = []
+    logs[gid][uid].append({
+        "action"   : action,
+        "moderator": moderator.name,
+        "reason"   : reason,
+        "duration" : duration,
+        "timestamp": str(datetime.datetime.utcnow())
+    })
+    save_json(MODLOG_FILE, logs)
+
+    channel = discord.utils.get(guild.text_channels, name=MODLOG_CHANNEL_NAME)
+    if not channel:
+        return
+    colors = {
+        "Mute"           : discord.Color.orange(),
+        "Unmute"         : discord.Color.green(),
+        "Ban"            : discord.Color.red(),
+        "Kick"           : discord.Color.dark_orange(),
+        "Timeout"        : discord.Color.gold(),
+        "Timeout Removed": discord.Color.green(),
+        "Warn"           : discord.Color.yellow(),
+    }
+    embed = discord.Embed(
+        title     = f"🔨 Mod Action — {action}",
+        color     = colors.get(action, discord.Color.blurple()),
+        timestamp = datetime.datetime.utcnow()
+    )
+    embed.add_field(name="Moderator", value=f"{moderator.mention} (`{moderator.name}`)", inline=True)
+    embed.add_field(name="Target",    value=f"{target.mention} (`{target.name}`)",       inline=True)
+    embed.add_field(name="Reason",    value=reason,   inline=False)
+    embed.add_field(name="Duration",  value=duration, inline=True)
+    embed.set_footer(text=f"Target ID: {target.id}")
+    await channel.send(embed=embed)
+
+# ============================================================
 #  INTENTS
 # ============================================================
 intents = discord.Intents.default()
@@ -55,8 +95,6 @@ intents.invites         = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 invite_cache = {}
-
-# Music queue per guild: {guild_id: [{"url":..., "title":...}]}
 music_queues = {}
 
 # ============================================================
@@ -81,19 +119,17 @@ def has_mod_role():
     return commands.check(predicate)
 
 # ============================================================
-#  WELCOME MESSAGE + INVITE TRACKING
+#  WELCOME
 # ============================================================
 @bot.event
 async def on_member_join(member):
     guild = member.guild
-    used_invite_code = None
     inviter = None
     try:
         new_invites = await guild.fetch_invites()
         old_cache   = invite_cache.get(guild.id, {})
         for inv in new_invites:
             if old_cache.get(inv.code, 0) < inv.uses:
-                used_invite_code = inv.code
                 inviter = inv.inviter
                 break
         invite_cache[guild.id] = {inv.code: inv.uses for inv in new_invites}
@@ -101,8 +137,7 @@ async def on_member_join(member):
             invite_data = load_json(INVITES_FILE)
             gid = str(guild.id)
             uid = str(inviter.id)
-            if gid not in invite_data:
-                invite_data[gid] = {}
+            if gid not in invite_data: invite_data[gid] = {}
             invite_data[gid][uid] = invite_data[gid].get(uid, 0) + 1
             save_json(INVITES_FILE, invite_data)
     except Exception:
@@ -114,43 +149,25 @@ async def on_member_join(member):
         acct_age    = (datetime.datetime.utcnow() - member.created_at.replace(tzinfo=None)).days
         embed = discord.Embed(
             title       = f"Welcome to {guild.name}! 🎉",
-            description = (
-                f"Hey {member.mention}, glad you're here!\n"
-                f"You're member **#{guild.member_count}**{invite_line}\n"
-                f"Account created **{acct_age}** days ago."
-            ),
-            color     = discord.Color.green(),
-            timestamp = datetime.datetime.utcnow()
+            description = f"Hey {member.mention}, glad you're here!\nYou're member **#{guild.member_count}**{invite_line}\nAccount created **{acct_age}** days ago.",
+            color       = discord.Color.green(),
+            timestamp   = datetime.datetime.utcnow()
         )
         embed.set_thumbnail(url=member.display_avatar.url)
         await channel.send(embed=embed)
 
-# ============================================================
-#  LEAVE MESSAGE
-# ============================================================
 @bot.event
 async def on_member_remove(member):
     channel = discord.utils.get(member.guild.text_channels, name=LEAVE_CHANNEL_NAME)
     if channel:
-        await channel.send(
-            f"👋 **{member.name}** has left the server. "
-            f"We now have **{member.guild.member_count}** members."
-        )
+        await channel.send(f"👋 **{member.name}** has left the server. We now have **{member.guild.member_count}** members.")
 
-# ============================================================
-#  BOOST MESSAGE
-# ============================================================
 @bot.event
 async def on_member_update(before, after):
     if before.premium_since is None and after.premium_since is not None:
         channel = discord.utils.get(after.guild.text_channels, name=BOOST_CHANNEL_NAME)
         if channel:
-            embed = discord.Embed(
-                title       = "💜 New Server Booster!",
-                description = f"Thank you **{after.mention}** for boosting the server! 🚀",
-                color       = discord.Color.purple(),
-                timestamp   = datetime.datetime.utcnow()
-            )
+            embed = discord.Embed(title="💜 New Server Booster!", description=f"Thank you **{after.mention}** for boosting the server! 🚀", color=discord.Color.purple(), timestamp=datetime.datetime.utcnow())
             embed.set_thumbnail(url=after.display_avatar.url)
             await channel.send(embed=embed)
 
@@ -162,46 +179,32 @@ async def on_message(message):
     if message.author.bot:
         await bot.process_commands(message)
         return
-
-    # Count message
     data = load_json(MSG_COUNT_FILE)
     gid  = str(message.guild.id) if message.guild else None
     uid  = str(message.author.id)
     if gid:
-        if gid not in data:
-            data[gid] = {}
+        if gid not in data: data[gid] = {}
         data[gid][uid] = data[gid].get(uid, 0) + 1
         save_json(MSG_COUNT_FILE, data)
-
-    # Auto response — check dynamic AR first, then built-in defaults
     if message.guild:
         content_lower = message.content.lower()
-
-        # Dynamic AR (saved per guild)
-        ar_data = load_json(AR_FILE)
-        gid_str = str(message.guild.id)
-        guild_ar = ar_data.get(gid_str, {})
+        ar_data  = load_json(AR_FILE)
+        guild_ar = ar_data.get(str(message.guild.id), {})
         responded = False
         for trigger, response in guild_ar.items():
             if trigger in content_lower:
                 await message.channel.send(response)
                 responded = True
                 break
-
-        # Built-in defaults (only if no dynamic AR matched)
         if not responded:
             for trigger, response in AUTO_RESPONSES.items():
                 if trigger in content_lower:
                     await message.channel.send(response)
                     break
-
     await bot.process_commands(message)
 
 # ============================================================
-#  DYNAMIC AUTO RESPONDER COMMANDS
-#  !ar add <trigger> <response>
-#  !ar remove <trigger>
-#  !ar list
+#  AUTO RESPONDER
 # ============================================================
 @bot.group(invoke_without_command=True)
 async def ar(ctx):
@@ -212,8 +215,7 @@ async def ar(ctx):
 async def ar_add(ctx, trigger: str, *, response: str):
     ar_data = load_json(AR_FILE)
     gid     = str(ctx.guild.id)
-    if gid not in ar_data:
-        ar_data[gid] = {}
+    if gid not in ar_data: ar_data[gid] = {}
     ar_data[gid][trigger.lower()] = response
     save_json(AR_FILE, ar_data)
     await ctx.send(f"✅ Trigger `{trigger.lower()}` added.")
@@ -225,19 +227,18 @@ async def ar_remove(ctx, trigger: str):
     gid     = str(ctx.guild.id)
     trigger = trigger.lower()
     if gid in ar_data and trigger in ar_data[gid]:
-        removed_response = ar_data[gid].pop(trigger)
+        removed = ar_data[gid].pop(trigger)
         save_json(AR_FILE, ar_data)
-        await ctx.send(f"✅ {removed_response}\nTrigger removed.")
+        await ctx.send(f"✅ {removed}\nTrigger removed.")
     else:
         await ctx.send(f"❌ Trigger `{trigger}` not found.")
 
 @ar.command(name="list")
 async def ar_list(ctx):
     ar_data  = load_json(AR_FILE)
-    gid      = str(ctx.guild.id)
-    guild_ar = ar_data.get(gid, {})
+    guild_ar = ar_data.get(str(ctx.guild.id), {})
     if not guild_ar:
-        await ctx.send("No custom auto-responses set yet. Use `!ar add <trigger> <response>`")
+        await ctx.send("No custom auto-responses set yet.")
         return
     embed = discord.Embed(title="📋 Auto Responses", color=discord.Color.blurple())
     for trigger, response in guild_ar.items():
@@ -245,14 +246,8 @@ async def ar_list(ctx):
     await ctx.send(embed=embed)
 
 # ============================================================
-#  MUSIC COMMANDS
-#  !play <youtube link or song name>
-#  !skip
-#  !stop
-#  !queue
-#  !nowplaying
+#  MUSIC
 # ============================================================
-
 YDL_OPTIONS = {
     "format"         : "bestaudio/best",
     "noplaylist"     : True,
@@ -270,45 +265,34 @@ async def play_next(ctx):
     if music_queues.get(gid):
         next_song = music_queues[gid].pop(0)
         source = await discord.FFmpegOpusAudio.from_probe(next_song["url"], **FFMPEG_OPTIONS)
-        ctx.voice_client.play(
-            source,
-            after=lambda e: asyncio.run_coroutine_threadsafe(play_next(ctx), bot.loop)
-        )
+        ctx.voice_client.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(play_next(ctx), bot.loop))
         await ctx.send(f"🎵 Now playing: **{next_song['title']}**")
     else:
         await ctx.send("✅ Queue finished.")
 
 @bot.command()
 async def play(ctx, *, query: str):
-    # Must be in a voice channel
     if not ctx.author.voice:
         await ctx.send("❌ You need to be in a voice channel first!")
         return
-
     vc = ctx.voice_client
     if not vc:
         vc = await ctx.author.voice.channel.connect()
     elif vc.channel != ctx.author.voice.channel:
         await vc.move_to(ctx.author.voice.channel)
-
     await ctx.send(f"🔍 Searching for: **{query}**...")
-
     loop = asyncio.get_event_loop()
     with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
         try:
             info = await loop.run_in_executor(None, lambda: ydl.extract_info(query, download=False))
-            if "entries" in info:
-                info = info["entries"][0]
+            if "entries" in info: info = info["entries"][0]
             url   = info["url"]
             title = info.get("title", "Unknown")
         except Exception as e:
-            await ctx.send(f"❌ Could not find/play that. Try a different query.\n`{e}`")
+            await ctx.send(f"❌ Could not find/play that.\n`{e}`")
             return
-
     gid = ctx.guild.id
-    if gid not in music_queues:
-        music_queues[gid] = []
-
+    if gid not in music_queues: music_queues[gid] = []
     if vc.is_playing() or vc.is_paused():
         music_queues[gid].append({"url": url, "title": title})
         await ctx.send(f"➕ Added to queue: **{title}** (position #{len(music_queues[gid])})")
@@ -327,8 +311,7 @@ async def skip(ctx):
 
 @bot.command()
 async def stop(ctx):
-    gid = ctx.guild.id
-    music_queues[gid] = []
+    music_queues[ctx.guild.id] = []
     vc = ctx.voice_client
     if vc:
         await vc.disconnect()
@@ -338,8 +321,7 @@ async def stop(ctx):
 
 @bot.command()
 async def queue(ctx):
-    gid = ctx.guild.id
-    q   = music_queues.get(gid, [])
+    q = music_queues.get(ctx.guild.id, [])
     if not q:
         await ctx.send("📭 Queue is empty.")
         return
@@ -352,163 +334,57 @@ async def queue(ctx):
 async def nowplaying(ctx):
     vc = ctx.voice_client
     if vc and vc.is_playing():
-        gid = ctx.guild.id
-        # The currently playing song was already popped from queue, so just confirm
         await ctx.send("🎵 A song is currently playing. Use `!queue` to see what's next.")
     else:
         await ctx.send("❌ Nothing is playing right now.")
 
 # ============================================================
-#  MEMBER COUNT
+#  SERVER & MEMBER COMMANDS
 # ============================================================
 @bot.command()
 async def membercount(ctx):
     await ctx.send(f"👥 Total members: **{ctx.guild.member_count}**")
 
-# ============================================================
-#  MEMBER INFO
-# ============================================================
 @bot.command()
 async def memberinfo(ctx, member: discord.Member = None):
     member = member or ctx.author
     roles  = [r.mention for r in member.roles if r.name != "@everyone"]
-    embed  = discord.Embed(
-        title     = f"Member Info — {member.name}",
-        color     = member.color,
-        timestamp = datetime.datetime.utcnow()
-    )
+    embed  = discord.Embed(title=f"Member Info — {member.name}", color=member.color, timestamp=datetime.datetime.utcnow())
     embed.set_thumbnail(url=member.display_avatar.url)
-    embed.add_field(name="ID",              value=member.id,                             inline=True)
-    embed.add_field(name="Nickname",        value=member.nick or "None",                 inline=True)
-    embed.add_field(name="Joined Server",   value=member.joined_at.strftime("%Y-%m-%d"), inline=True)
-    embed.add_field(name="Account Created", value=member.created_at.strftime("%Y-%m-%d"),inline=True)
-    embed.add_field(name="Roles",           value=" ".join(roles) if roles else "None",  inline=False)
-    warnings   = load_json(WARNINGS_FILE)
-    warn_count = len(warnings.get(str(ctx.guild.id), {}).get(str(member.id), []))
+    embed.add_field(name="ID",              value=member.id,                              inline=True)
+    embed.add_field(name="Nickname",        value=member.nick or "None",                  inline=True)
+    embed.add_field(name="Joined Server",   value=member.joined_at.strftime("%Y-%m-%d"),  inline=True)
+    embed.add_field(name="Account Created", value=member.created_at.strftime("%Y-%m-%d"), inline=True)
+    embed.add_field(name="Roles",           value=" ".join(roles) if roles else "None",   inline=False)
+    warn_count = len(load_json(WARNINGS_FILE).get(str(ctx.guild.id), {}).get(str(member.id), []))
     embed.add_field(name="Warnings", value=str(warn_count), inline=True)
     await ctx.send(embed=embed)
 
-# ============================================================
-#  SERVER INFO
-# ============================================================
 @bot.command()
 async def serverinfo(ctx):
     guild = ctx.guild
     embed = discord.Embed(title=guild.name, color=discord.Color.blurple(), timestamp=datetime.datetime.utcnow())
-    if guild.icon:
-        embed.set_thumbnail(url=guild.icon.url)
-    embed.add_field(name="Owner",   value=guild.owner.mention,                  inline=True)
-    embed.add_field(name="Members", value=guild.member_count,                   inline=True)
-    embed.add_field(name="Channels",value=len(guild.channels),                  inline=True)
-    embed.add_field(name="Roles",   value=len(guild.roles),                     inline=True)
-    embed.add_field(name="Boosts",  value=guild.premium_subscription_count,     inline=True)
-    embed.add_field(name="Created", value=guild.created_at.strftime("%Y-%m-%d"),inline=True)
+    if guild.icon: embed.set_thumbnail(url=guild.icon.url)
+    embed.add_field(name="Owner",    value=guild.owner.mention,                  inline=True)
+    embed.add_field(name="Members",  value=guild.member_count,                   inline=True)
+    embed.add_field(name="Channels", value=len(guild.channels),                  inline=True)
+    embed.add_field(name="Roles",    value=len(guild.roles),                     inline=True)
+    embed.add_field(name="Boosts",   value=guild.premium_subscription_count,     inline=True)
+    embed.add_field(name="Created",  value=guild.created_at.strftime("%Y-%m-%d"),inline=True)
     await ctx.send(embed=embed)
 
-# ============================================================
-#  MUTE / UNMUTE
-# ============================================================
-@bot.command()
-@has_mod_role()
-async def mute(ctx, member: discord.Member, *, reason="No reason provided"):
-    muted_role = discord.utils.get(ctx.guild.roles, name=MUTED_ROLE_NAME)
-    if not muted_role:
-        await ctx.send(f"❌ No role named **{MUTED_ROLE_NAME}** found.")
-        return
-    await member.add_roles(muted_role, reason=reason)
-    await ctx.send(f"🔇 {member.mention} has been muted. Reason: {reason}")
-
-@bot.command()
-@has_mod_role()
-async def unmute(ctx, member: discord.Member):
-    muted_role = discord.utils.get(ctx.guild.roles, name=MUTED_ROLE_NAME)
-    if not muted_role:
-        await ctx.send(f"❌ No role named **{MUTED_ROLE_NAME}** found.")
-        return
-    await member.remove_roles(muted_role)
-    await ctx.send(f"🔊 {member.mention} has been unmuted.")
-
-# ============================================================
-#  WARN / WARNINGS
-# ============================================================
-@bot.command()
-@has_mod_role()
-async def warn(ctx, member: discord.Member, *, reason="No reason provided"):
-    warnings = load_json(WARNINGS_FILE)
-    gid, uid = str(ctx.guild.id), str(member.id)
-    if gid not in warnings: warnings[gid] = {}
-    if uid not in warnings[gid]: warnings[gid][uid] = []
-    warnings[gid][uid].append({"reason": reason, "moderator": str(ctx.author.id), "timestamp": str(datetime.datetime.utcnow())})
-    save_json(WARNINGS_FILE, warnings)
-    await ctx.send(f"⚠️ {member.mention} warned. Reason: {reason} (Total: {len(warnings[gid][uid])})")
-
-@bot.command()
-async def warnings(ctx, member: discord.Member = None):
-    member   = member or ctx.author
-    warnings = load_json(WARNINGS_FILE)
-    warns    = warnings.get(str(ctx.guild.id), {}).get(str(member.id), [])
-    if not warns:
-        await ctx.send(f"✅ {member.mention} has no warnings.")
-        return
-    embed = discord.Embed(title=f"Warnings for {member.name}", color=discord.Color.orange())
-    for i, w in enumerate(warns, 1):
-        embed.add_field(name=f"Warning {i}", value=f"**Reason:** {w['reason']}\n**When:** {w['timestamp'][:10]}", inline=False)
-    await ctx.send(embed=embed)
-
-@bot.command()
-@has_mod_role()
-async def clearwarnings(ctx, member: discord.Member):
-    warnings = load_json(WARNINGS_FILE)
-    gid, uid = str(ctx.guild.id), str(member.id)
-    if gid in warnings and uid in warnings[gid]:
-        warnings[gid][uid] = []
-        save_json(WARNINGS_FILE, warnings)
-    await ctx.send(f"✅ Warnings cleared for {member.mention}.")
-
-# ============================================================
-#  ROLE
-# ============================================================
-@bot.command()
-@has_mod_role()
-async def role(ctx, member: discord.Member, *, role_name: str):
-    role_obj = discord.utils.get(ctx.guild.roles, name=role_name)
-    if not role_obj:
-        await ctx.send(f"❌ Role **{role_name}** not found.")
-        return
-    if role_obj in member.roles:
-        await member.remove_roles(role_obj)
-        await ctx.send(f"➖ Removed **{role_name}** from {member.mention}.")
-    else:
-        await member.add_roles(role_obj)
-        await ctx.send(f"➕ Added **{role_name}** to {member.mention}.")
-
-# ============================================================
-#  INVITE COUNTS
-# ============================================================
-@bot.command()
-async def invites(ctx, member: discord.Member = None):
-    member      = member or ctx.author
-    invite_data = load_json(INVITES_FILE)
-    count       = invite_data.get(str(ctx.guild.id), {}).get(str(member.id), 0)
-    await ctx.send(f"📨 **{member.name}** has invited **{count}** member(s).")
-
-# ============================================================
-#  ACCOUNT AGE
-# ============================================================
 @bot.command()
 async def accountage(ctx, member: discord.Member = None):
-    member  = member or ctx.author
-    created = member.created_at.replace(tzinfo=None)
-    age     = (datetime.datetime.utcnow() - created).days
-    await ctx.send(
-        f"🗓️ **{member.name}**'s account was created on "
-        f"**{member.created_at.strftime('%B %d, %Y')}** "
-        f"({age // 365}y {(age % 365) // 30}m {age % 30}d ago)."
-    )
+    member = member or ctx.author
+    age    = (datetime.datetime.utcnow() - member.created_at.replace(tzinfo=None)).days
+    await ctx.send(f"🗓️ **{member.name}**'s account was created on **{member.created_at.strftime('%B %d, %Y')}** ({age // 365}y {(age % 365) // 30}m {age % 30}d ago).")
 
-# ============================================================
-#  LEADERBOARD
-# ============================================================
+@bot.command()
+async def invites(ctx, member: discord.Member = None):
+    member = member or ctx.author
+    count  = load_json(INVITES_FILE).get(str(ctx.guild.id), {}).get(str(member.id), 0)
+    await ctx.send(f"📨 **{member.name}** has invited **{count}** member(s).")
+
 @bot.command()
 async def leaderboard(ctx):
     data = load_json(MSG_COUNT_FILE)
@@ -530,15 +406,87 @@ async def leaderboard(ctx):
 # ============================================================
 @bot.command()
 @has_mod_role()
+async def mute(ctx, member: discord.Member, *, reason="No reason provided"):
+    muted_role = discord.utils.get(ctx.guild.roles, name=MUTED_ROLE_NAME)
+    if not muted_role:
+        await ctx.send(f"❌ No role named **{MUTED_ROLE_NAME}** found.")
+        return
+    await member.add_roles(muted_role, reason=reason)
+    await ctx.send(f"🔇 {member.mention} has been muted. Reason: {reason}")
+    await send_modlog(ctx.guild, "Mute", ctx.author, member, reason, "Until unmuted")
+
+@bot.command()
+@has_mod_role()
+async def unmute(ctx, member: discord.Member):
+    muted_role = discord.utils.get(ctx.guild.roles, name=MUTED_ROLE_NAME)
+    if not muted_role:
+        await ctx.send(f"❌ No role named **{MUTED_ROLE_NAME}** found.")
+        return
+    await member.remove_roles(muted_role)
+    await ctx.send(f"🔊 {member.mention} has been unmuted.")
+    await send_modlog(ctx.guild, "Unmute", ctx.author, member, "N/A", "N/A")
+
+@bot.command()
+@has_mod_role()
+async def warn(ctx, member: discord.Member, *, reason="No reason provided"):
+    warnings = load_json(WARNINGS_FILE)
+    gid, uid = str(ctx.guild.id), str(member.id)
+    if gid not in warnings: warnings[gid] = {}
+    if uid not in warnings[gid]: warnings[gid][uid] = []
+    warnings[gid][uid].append({"reason": reason, "moderator": str(ctx.author.id), "timestamp": str(datetime.datetime.utcnow())})
+    save_json(WARNINGS_FILE, warnings)
+    await ctx.send(f"⚠️ {member.mention} warned. Reason: {reason} (Total: {len(warnings[gid][uid])})")
+    await send_modlog(ctx.guild, "Warn", ctx.author, member, reason, "N/A")
+
+@bot.command()
+async def warnings(ctx, member: discord.Member = None):
+    member = member or ctx.author
+    warns  = load_json(WARNINGS_FILE).get(str(ctx.guild.id), {}).get(str(member.id), [])
+    if not warns:
+        await ctx.send(f"✅ {member.mention} has no warnings.")
+        return
+    embed = discord.Embed(title=f"Warnings for {member.name}", color=discord.Color.orange())
+    for i, w in enumerate(warns, 1):
+        embed.add_field(name=f"Warning {i}", value=f"**Reason:** {w['reason']}\n**When:** {w['timestamp'][:10]}", inline=False)
+    await ctx.send(embed=embed)
+
+@bot.command()
+@has_mod_role()
+async def clearwarnings(ctx, member: discord.Member):
+    warnings = load_json(WARNINGS_FILE)
+    gid, uid = str(ctx.guild.id), str(member.id)
+    if gid in warnings and uid in warnings[gid]:
+        warnings[gid][uid] = []
+        save_json(WARNINGS_FILE, warnings)
+    await ctx.send(f"✅ Warnings cleared for {member.mention}.")
+
+@bot.command()
+@has_mod_role()
+async def role(ctx, member: discord.Member, *, role_name: str):
+    role_obj = discord.utils.get(ctx.guild.roles, name=role_name)
+    if not role_obj:
+        await ctx.send(f"❌ Role **{role_name}** not found.")
+        return
+    if role_obj in member.roles:
+        await member.remove_roles(role_obj)
+        await ctx.send(f"➖ Removed **{role_name}** from {member.mention}.")
+    else:
+        await member.add_roles(role_obj)
+        await ctx.send(f"➕ Added **{role_name}** to {member.mention}.")
+
+@bot.command()
+@has_mod_role()
 async def kick(ctx, member: discord.Member, *, reason="No reason provided"):
     await member.kick(reason=reason)
     await ctx.send(f"👢 {member.mention} was kicked. Reason: {reason}")
+    await send_modlog(ctx.guild, "Kick", ctx.author, member, reason, "N/A")
 
 @bot.command()
 @has_mod_role()
 async def ban(ctx, member: discord.Member, *, reason="No reason provided"):
     await member.ban(reason=reason)
     await ctx.send(f"🔨 {member.mention} was banned. Reason: {reason}")
+    await send_modlog(ctx.guild, "Ban", ctx.author, member, reason, "Permanent")
 
 @bot.command()
 @has_mod_role()
@@ -553,10 +501,38 @@ async def timeout(ctx, member: discord.Member, duration: str, *, reason="No reas
     except ValueError:
         await ctx.send("❌ Use format like `1m`, `2h`, or `1y`")
         return
-    minutes  = amount * units[unit]
-    delta    = datetime.timedelta(minutes=minutes)
-    await member.timeout(delta, reason=reason)
+    minutes = amount * units[unit]
+    await member.timeout(datetime.timedelta(minutes=minutes), reason=reason)
     await ctx.send(f"⏱️ {member.mention} timed out for **{duration}**. Reason: {reason}")
+    await send_modlog(ctx.guild, "Timeout", ctx.author, member, reason, duration)
+
+@bot.command()
+@has_mod_role()
+async def removetimeout(ctx, member: discord.Member):
+    await member.timeout(None)
+    await ctx.send(f"✅ Timeout removed for {member.mention}.")
+    await send_modlog(ctx.guild, "Timeout Removed", ctx.author, member, "N/A", "N/A")
+
+# ============================================================
+#  MODLOGS COMMAND
+# ============================================================
+@bot.command()
+async def modlogs(ctx, member: discord.Member = None):
+    member  = member or ctx.author
+    logs    = load_json(MODLOG_FILE)
+    entries = logs.get(str(ctx.guild.id), {}).get(str(member.id), [])
+    if not entries:
+        await ctx.send(f"✅ No mod actions found for {member.mention}.")
+        return
+    embed = discord.Embed(title=f"📋 Mod Logs — {member.name}", color=discord.Color.blurple(), timestamp=datetime.datetime.utcnow())
+    for i, e in enumerate(entries[-10:], 1):
+        embed.add_field(
+            name  = f"{i}. {e['action']} — {e['timestamp'][:10]}",
+            value = f"**By:** {e['moderator']} | **Reason:** {e['reason']} | **Duration:** {e['duration']}",
+            inline= False
+        )
+    embed.set_footer(text=f"Showing last {min(len(entries), 10)} of {len(entries)} entries")
+    await ctx.send(embed=embed)
 
 # ============================================================
 #  ERROR HANDLING
