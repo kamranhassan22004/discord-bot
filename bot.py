@@ -19,7 +19,7 @@ WELCOME_CHANNEL_NAME = "💬・general-chat"
 LEAVE_CHANNEL_NAME   = "🤖・server-logs"
 BOOST_CHANNEL_NAME   = "🤖・server-logs"
 MOD_ROLES            = ["Admin", "EC Mod"]
-MUTED_ROLE_NAME      = "Muted"
+MUTED_ROLE_NAME      = "EC-Team"
 MODLOG_CHANNEL_NAME  = "🤖・server-logs"
 
 SPOTIFY_CLIENT_ID     = os.getenv("SPOTIFY_CLIENT_ID", "8d7d5d56649548068d927a6e17fa5856")
