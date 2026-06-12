@@ -5,7 +5,8 @@ import datetime
 import json
 import asyncio
 import yt_dlp
-from collections import defaultdict
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -20,6 +21,14 @@ BOOST_CHANNEL_NAME   = "welcome"
 MOD_ROLES            = ["Admin", "Moderator"]
 MUTED_ROLE_NAME      = "Muted"
 MODLOG_CHANNEL_NAME  = "mod-logs"
+
+SPOTIFY_CLIENT_ID     = os.getenv("SPOTIFY_CLIENT_ID", "8d7d5d56649548068d927a6e17fa5856")
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "d4ea0417c9684e18bc8086a24c3e2764")
+
+sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+    client_id=SPOTIFY_CLIENT_ID,
+    client_secret=SPOTIFY_CLIENT_SECRET
+))
 
 # ============================================================
 #  DATA FILES
@@ -42,6 +51,22 @@ def save_json(filename, data):
     with open(filename, "w") as f:
         json.dump(data, f, indent=2)
 
+def extract_spotify_query(url):
+    """Extract song name + artist from Spotify URL using API"""
+    try:
+        if "track" in url:
+            track_id = url.split("track/")[1].split("?")[0]
+            track    = sp.track(track_id)
+            name     = track["name"]
+            artist   = track["artists"][0]["name"]
+            return f"{name} {artist}"
+        elif "playlist" in url:
+            return None, "playlist"
+        else:
+            return None, "unsupported"
+    except Exception as e:
+        return None
+
 # ============================================================
 #  MODLOG HELPER
 # ============================================================
@@ -59,24 +84,16 @@ async def send_modlog(guild, action, moderator, target, reason, duration):
         "timestamp": str(datetime.datetime.utcnow())
     })
     save_json(MODLOG_FILE, logs)
-
     channel = discord.utils.get(guild.text_channels, name=MODLOG_CHANNEL_NAME)
     if not channel:
         return
     colors = {
-        "Mute"           : discord.Color.orange(),
-        "Unmute"         : discord.Color.green(),
-        "Ban"            : discord.Color.red(),
-        "Kick"           : discord.Color.dark_orange(),
-        "Timeout"        : discord.Color.gold(),
-        "Timeout Removed": discord.Color.green(),
-        "Warn"           : discord.Color.yellow(),
+        "Mute": discord.Color.orange(), "Unmute": discord.Color.green(),
+        "Ban": discord.Color.red(), "Kick": discord.Color.dark_orange(),
+        "Timeout": discord.Color.gold(), "Timeout Removed": discord.Color.green(),
+        "Warn": discord.Color.yellow(),
     }
-    embed = discord.Embed(
-        title     = f"🔨 Mod Action — {action}",
-        color     = colors.get(action, discord.Color.blurple()),
-        timestamp = datetime.datetime.utcnow()
-    )
+    embed = discord.Embed(title=f"🔨 Mod Action — {action}", color=colors.get(action, discord.Color.blurple()), timestamp=datetime.datetime.utcnow())
     embed.add_field(name="Moderator", value=f"{moderator.mention} (`{moderator.name}`)", inline=True)
     embed.add_field(name="Target",    value=f"{target.mention} (`{target.name}`)",       inline=True)
     embed.add_field(name="Reason",    value=reason,   inline=False)
@@ -142,7 +159,6 @@ async def on_member_join(member):
             save_json(INVITES_FILE, invite_data)
     except Exception:
         pass
-
     channel = discord.utils.get(guild.text_channels, name=WELCOME_CHANNEL_NAME)
     if channel:
         invite_line = f"\nInvited by **{inviter.name}**" if inviter else ""
@@ -150,8 +166,7 @@ async def on_member_join(member):
         embed = discord.Embed(
             title       = f"Welcome to {guild.name}! 🎉",
             description = f"Hey {member.mention}, glad you're here!\nYou're member **#{guild.member_count}**{invite_line}\nAccount created **{acct_age}** days ago.",
-            color       = discord.Color.green(),
-            timestamp   = datetime.datetime.utcnow()
+            color=discord.Color.green(), timestamp=datetime.datetime.utcnow()
         )
         embed.set_thumbnail(url=member.display_avatar.url)
         await channel.send(embed=embed)
@@ -167,7 +182,7 @@ async def on_member_update(before, after):
     if before.premium_since is None and after.premium_since is not None:
         channel = discord.utils.get(after.guild.text_channels, name=BOOST_CHANNEL_NAME)
         if channel:
-            embed = discord.Embed(title="💜 New Server Booster!", description=f"Thank you **{after.mention}** for boosting the server! 🚀", color=discord.Color.purple(), timestamp=datetime.datetime.utcnow())
+            embed = discord.Embed(title="💜 New Server Booster!", description=f"Thank you **{after.mention}** for boosting! 🚀", color=discord.Color.purple(), timestamp=datetime.datetime.utcnow())
             embed.set_thumbnail(url=after.display_avatar.url)
             await channel.send(embed=embed)
 
@@ -249,15 +264,19 @@ async def ar_list(ctx):
 #  MUSIC
 # ============================================================
 YDL_OPTIONS = {
-    "format"         : "bestaudio/best",
+    "format"         : "bestaudio",
     "noplaylist"     : True,
     "quiet"          : True,
     "default_search" : "scsearch",
     "source_address" : "0.0.0.0",
+    "postprocessors" : [{
+        "key"            : "FFmpegExtractAudio",
+        "preferredcodec" : "opus",
+    }],
 }
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-    "options"       : "-vn",
+    "options"       : "-vn -af aresample=48000 -b:a 128k",
 }
 
 async def play_next(ctx):
@@ -280,17 +299,30 @@ async def play(ctx, *, query: str):
         vc = await ctx.author.voice.channel.connect()
     elif vc.channel != ctx.author.voice.channel:
         await vc.move_to(ctx.author.voice.channel)
-    await ctx.send(f"🔍 Searching for: **{query}**...")
+
+    # Detect Spotify link and convert to search query
+    if "open.spotify.com/track" in query:
+        await ctx.send("🎵 Spotify link detected, finding song...")
+        search_query = extract_spotify_query(query)
+        if not search_query:
+            await ctx.send("❌ Could not extract song info from Spotify link.")
+            return
+        await ctx.send(f"🔍 Searching SoundCloud for: **{search_query}**...")
+    else:
+        search_query = query
+        await ctx.send(f"🔍 Searching for: **{query}**...")
+
     loop = asyncio.get_event_loop()
     with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
         try:
-            info = await loop.run_in_executor(None, lambda: ydl.extract_info(query, download=False))
+            info = await loop.run_in_executor(None, lambda: ydl.extract_info(search_query, download=False))
             if "entries" in info: info = info["entries"][0]
             url   = info["url"]
             title = info.get("title", "Unknown")
         except Exception as e:
             await ctx.send(f"❌ Could not find/play that.\n`{e}`")
             return
+
     gid = ctx.guild.id
     if gid not in music_queues: music_queues[gid] = []
     if vc.is_playing() or vc.is_paused():
