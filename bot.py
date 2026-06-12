@@ -18,7 +18,7 @@ TOKEN                = os.getenv("DISCORD_TOKEN")
 WELCOME_CHANNEL_NAME = "💬・general-chat"
 LEAVE_CHANNEL_NAME   = "🤖・server-logs"
 BOOST_CHANNEL_NAME   = "🤖・server-logs"
-MOD_ROLES            = ["Admin", "EC Mod , EC Team"]
+MOD_ROLES = ["Admin", "EC Mod", "EC Team"]
 MUTED_ROLE_NAME      = "Muted"
 MODLOG_CHANNEL_NAME  = "🤖・server-logs"
 
