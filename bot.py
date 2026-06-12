@@ -21,6 +21,7 @@ BOOST_CHANNEL_NAME   = "🤖・server-logs"
 MOD_ROLES = ["Admin", "EC Mod", "EC Team"]
 MUTED_ROLE_NAME      = "Muted"
 MODLOG_CHANNEL_NAME  = "🤖・server-logs"
+TIMEOUT_ROLES = ["EC Mod"]  # roles that can only timeout/untimeout
 
 SPOTIFY_CLIENT_ID     = os.getenv("SPOTIFY_CLIENT_ID", "8d7d5d56649548068d927a6e17fa5856")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "d4ea0417c9684e18bc8086a24c3e2764")
@@ -164,7 +165,7 @@ async def on_member_join(member):
         signup_channel = discord.utils.get(guild.text_channels, name="⚜️-glitchy-sign-up")
         signup_mention = signup_channel.mention if signup_channel else "#⚜️-glitchy-sign-up"
         embed = discord.Embed(
-            title       = f"Welcome To Exposure Club {member.name}!",
+            title       = f"Welcome To Exposure Club {member.mention}!",
             description = (
                 f"You are member **#{guild.member_count}**\n\n"
                 f"Check {signup_mention} to get **$10 bonus** on starting up! 💰"
@@ -525,8 +526,12 @@ async def ban(ctx, member: discord.Member, *, reason="No reason provided"):
     await send_modlog(ctx.guild, "Ban", ctx.author, member, reason, "Permanent")
 
 @bot.command()
-@has_mod_role()
 async def timeout(ctx, member: discord.Member, duration: str, *, reason="No reason provided"):
+    can_use = any(role.name in MOD_ROLES for role in ctx.author.roles) or \
+              any(role.name in TIMEOUT_ROLES for role in ctx.author.roles)
+    if not can_use:
+        await ctx.send("❌ You don't have permission to use this command.")
+        return
     units = {"m": 1, "h": 60, "y": 525600}
     unit  = duration[-1].lower()
     if unit not in units:
@@ -543,8 +548,12 @@ async def timeout(ctx, member: discord.Member, duration: str, *, reason="No reas
     await send_modlog(ctx.guild, "Timeout", ctx.author, member, reason, duration)
 
 @bot.command()
-@has_mod_role()
 async def removetimeout(ctx, member: discord.Member):
+    can_use = any(role.name in MOD_ROLES for role in ctx.author.roles) or \
+              any(role.name in TIMEOUT_ROLES for role in ctx.author.roles)
+    if not can_use:
+        await ctx.send("❌ You don't have permission to use this command.")
+        return
     await member.timeout(None)
     await ctx.send(f"✅ Timeout removed for {member.mention}.")
     await send_modlog(ctx.guild, "Timeout Removed", ctx.author, member, "N/A", "N/A")
