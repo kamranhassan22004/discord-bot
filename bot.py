@@ -269,19 +269,16 @@ async def ar_list(ctx):
 #  MUSIC
 # ============================================================
 YDL_OPTIONS = {
-    "format"         : "bestaudio",
+    "format"         : "bestaudio/best",
     "noplaylist"     : True,
     "quiet"          : True,
     "default_search" : "scsearch",
     "source_address" : "0.0.0.0",
-    "postprocessors" : [{
-        "key"            : "FFmpegExtractAudio",
-        "preferredcodec" : "opus",
-    }],
+    "prefer_ffmpeg"  : True,
 }
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-    "options"       : "-vn -af aresample=48000 -b:a 128k",
+    "options"       : "-vn -b:a 320k",
 }
 
 async def play_next(ctx):
