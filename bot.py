@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import os
 import datetime
 import json
@@ -18,10 +19,10 @@ TOKEN                = os.getenv("DISCORD_TOKEN")
 WELCOME_CHANNEL_NAME = "💬・general-chat"
 LEAVE_CHANNEL_NAME   = "🤖・server-logs"
 BOOST_CHANNEL_NAME   = "🤖・server-logs"
-MOD_ROLES = ["Admin", "EC Mod", "EC Team"]
+MOD_ROLES            = ["Admin", "EC Mod", "EC Team"]
 MUTED_ROLE_NAME      = "Muted"
 MODLOG_CHANNEL_NAME  = "🤖・server-logs"
-TIMEOUT_ROLES = ["EC Mod"]  # roles that can only timeout/untimeout
+TIMEOUT_ROLES        = ["EC Mod"]
 
 SPOTIFY_CLIENT_ID     = os.getenv("SPOTIFY_CLIENT_ID", "8d7d5d56649548068d927a6e17fa5856")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "d4ea0417c9684e18bc8086a24c3e2764")
@@ -53,19 +54,13 @@ def save_json(filename, data):
         json.dump(data, f, indent=2)
 
 def extract_spotify_query(url):
-    """Extract song name + artist from Spotify URL using API"""
     try:
         if "track" in url:
             track_id = url.split("track/")[1].split("?")[0]
             track    = sp.track(track_id)
-            name     = track["name"]
-            artist   = track["artists"][0]["name"]
-            return f"{name} {artist}"
-        elif "playlist" in url:
-            return None, "playlist"
-        else:
-            return None, "unsupported"
-    except Exception as e:
+            return f"{track['name']} {track['artists'][0]['name']}"
+        return None
+    except:
         return None
 
 # ============================================================
@@ -77,23 +72,11 @@ async def send_modlog(guild, action, moderator, target, reason, duration):
     uid  = str(target.id)
     if gid not in logs: logs[gid] = {}
     if uid not in logs[gid]: logs[gid][uid] = []
-    logs[gid][uid].append({
-        "action"   : action,
-        "moderator": moderator.name,
-        "reason"   : reason,
-        "duration" : duration,
-        "timestamp": str(datetime.datetime.utcnow())
-    })
+    logs[gid][uid].append({"action": action, "moderator": moderator.name, "reason": reason, "duration": duration, "timestamp": str(datetime.datetime.utcnow())})
     save_json(MODLOG_FILE, logs)
     channel = discord.utils.get(guild.text_channels, name=MODLOG_CHANNEL_NAME)
-    if not channel:
-        return
-    colors = {
-        "Mute": discord.Color.orange(), "Unmute": discord.Color.green(),
-        "Ban": discord.Color.red(), "Kick": discord.Color.dark_orange(),
-        "Timeout": discord.Color.gold(), "Timeout Removed": discord.Color.green(),
-        "Warn": discord.Color.yellow(),
-    }
+    if not channel: return
+    colors = {"Mute": discord.Color.orange(), "Unmute": discord.Color.green(), "Ban": discord.Color.red(), "Kick": discord.Color.dark_orange(), "Timeout": discord.Color.gold(), "Timeout Removed": discord.Color.green(), "Warn": discord.Color.yellow()}
     embed = discord.Embed(title=f"🔨 Mod Action — {action}", color=colors.get(action, discord.Color.blurple()), timestamp=datetime.datetime.utcnow())
     embed.add_field(name="Moderator", value=f"{moderator.mention} (`{moderator.name}`)", inline=True)
     embed.add_field(name="Target",    value=f"{target.mention} (`{target.name}`)",       inline=True)
@@ -103,7 +86,7 @@ async def send_modlog(guild, action, moderator, target, reason, duration):
     await channel.send(embed=embed)
 
 # ============================================================
-#  INTENTS
+#  INTENTS & BOT
 # ============================================================
 intents = discord.Intents.default()
 intents.members         = True
@@ -111,16 +94,33 @@ intents.message_content = True
 intents.invites         = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+tree = bot.tree
 
 invite_cache = {}
 music_queues = {}
 
 # ============================================================
-#  READY
+#  PERMISSION HELPERS
+# ============================================================
+def has_mod_role():
+    async def predicate(ctx):
+        return any(role.name in MOD_ROLES for role in ctx.author.roles)
+    return commands.check(predicate)
+
+def slash_is_mod(interaction):
+    return any(role.name in MOD_ROLES for role in interaction.user.roles)
+
+def slash_can_timeout(interaction):
+    return any(role.name in MOD_ROLES + TIMEOUT_ROLES for role in interaction.user.roles)
+
+# ============================================================
+#  READY + SYNC SLASH COMMANDS
 # ============================================================
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} ({bot.user.id})")
+    await tree.sync()
+    print("Slash commands synced!")
     for guild in bot.guilds:
         try:
             invites = await guild.fetch_invites()
@@ -129,15 +129,7 @@ async def on_ready():
             pass
 
 # ============================================================
-#  PERMISSION CHECK
-# ============================================================
-def has_mod_role():
-    async def predicate(ctx):
-        return any(role.name in MOD_ROLES for role in ctx.author.roles)
-    return commands.check(predicate)
-
-# ============================================================
-#  WELCOME
+#  WELCOME / LEAVE / BOOST
 # ============================================================
 @bot.event
 async def on_member_join(member):
@@ -153,8 +145,7 @@ async def on_member_join(member):
         invite_cache[guild.id] = {inv.code: inv.uses for inv in new_invites}
         if inviter:
             invite_data = load_json(INVITES_FILE)
-            gid = str(guild.id)
-            uid = str(inviter.id)
+            gid = str(guild.id); uid = str(inviter.id)
             if gid not in invite_data: invite_data[gid] = {}
             invite_data[gid][uid] = invite_data[gid].get(uid, 0) + 1
             save_json(INVITES_FILE, invite_data)
@@ -165,14 +156,10 @@ async def on_member_join(member):
         signup_channel = discord.utils.get(guild.text_channels, name="⚜️-glitchy-sign-up")
         signup_mention = signup_channel.mention if signup_channel else "#⚜️-glitchy-sign-up"
         embed = discord.Embed(
-    title       = f"Welcome To Exposure Club {member.name}!",
-    description = (
-        f"Hey {member.mention}, you are member **#{guild.member_count}**\n\n"
-        f"Check {signup_mention} to get **$10 bonus** on starting up! 💰"
-    ),
-    color     = discord.Color.green(),
-    timestamp = datetime.datetime.utcnow()
-)
+            title       = f"Welcome To Exposure Club {member.name}!",
+            description = f"Hey {member.mention}, you are member **#{guild.member_count}**\n\nCheck {signup_mention} to get **$10 bonus** on starting up! 💰",
+            color=discord.Color.green(), timestamp=datetime.datetime.utcnow()
+        )
         embed.set_thumbnail(url=member.display_avatar.url)
         await channel.send(embed=embed)
 
@@ -224,7 +211,7 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ============================================================
-#  AUTO RESPONDER
+#  AUTO RESPONDER — prefix
 # ============================================================
 @bot.group(invoke_without_command=True)
 async def ar(ctx):
@@ -266,80 +253,119 @@ async def ar_list(ctx):
     await ctx.send(embed=embed)
 
 # ============================================================
+#  AUTO RESPONDER — slash
+# ============================================================
+@tree.command(name="ar_add", description="Add an auto response trigger (mod only)")
+@app_commands.describe(trigger="The trigger word", response="The bot's response")
+async def slash_ar_add(interaction: discord.Interaction, trigger: str, response: str):
+    if not slash_is_mod(interaction):
+        await interaction.response.send_message("❌ No permission.", ephemeral=True); return
+    ar_data = load_json(AR_FILE)
+    gid     = str(interaction.guild.id)
+    if gid not in ar_data: ar_data[gid] = {}
+    ar_data[gid][trigger.lower()] = response
+    save_json(AR_FILE, ar_data)
+    await interaction.response.send_message(f"✅ Trigger `{trigger.lower()}` added.")
+
+@tree.command(name="ar_remove", description="Remove an auto response trigger (mod only)")
+@app_commands.describe(trigger="The trigger to remove")
+async def slash_ar_remove(interaction: discord.Interaction, trigger: str):
+    if not slash_is_mod(interaction):
+        await interaction.response.send_message("❌ No permission.", ephemeral=True); return
+    ar_data = load_json(AR_FILE)
+    gid     = str(interaction.guild.id)
+    trigger = trigger.lower()
+    if gid in ar_data and trigger in ar_data[gid]:
+        ar_data[gid].pop(trigger)
+        save_json(AR_FILE, ar_data)
+        await interaction.response.send_message(f"✅ Trigger `{trigger}` removed.")
+    else:
+        await interaction.response.send_message(f"❌ Trigger `{trigger}` not found.")
+
+@tree.command(name="ar_list", description="List all auto response triggers")
+async def slash_ar_list(interaction: discord.Interaction):
+    ar_data  = load_json(AR_FILE)
+    guild_ar = ar_data.get(str(interaction.guild.id), {})
+    if not guild_ar:
+        await interaction.response.send_message("No custom auto-responses set yet."); return
+    embed = discord.Embed(title="📋 Auto Responses", color=discord.Color.blurple())
+    for trigger, response in guild_ar.items():
+        embed.add_field(name=f"`{trigger}`", value=response, inline=False)
+    await interaction.response.send_message(embed=embed)
+
+# ============================================================
 #  MUSIC
 # ============================================================
 YDL_OPTIONS = {
-    "format"         : "bestaudio/best",
-    "noplaylist"     : True,
-    "quiet"          : True,
-    "default_search" : "scsearch",
-    "source_address" : "0.0.0.0",
-    "prefer_ffmpeg"  : True,
+    "format"        : "bestaudio/best",
+    "noplaylist"    : True,
+    "quiet"         : True,
+    "default_search": "scsearch",
+    "source_address": "0.0.0.0",
+    "prefer_ffmpeg" : True,
 }
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options"       : "-vn -b:a 320k",
 }
 
-async def play_next(ctx):
-    gid = ctx.guild.id
+async def play_next(ctx=None, interaction=None, guild=None, voice_client=None, channel=None):
+    if ctx:
+        guild        = ctx.guild
+        voice_client = ctx.voice_client
+        channel      = ctx.channel
+    gid = guild.id
     if music_queues.get(gid):
         next_song = music_queues[gid].pop(0)
         source = await discord.FFmpegOpusAudio.from_probe(next_song["url"], **FFMPEG_OPTIONS)
-        ctx.voice_client.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(play_next(ctx), bot.loop))
-        await ctx.send(f"🎵 Now playing: **{next_song['title']}**")
+        voice_client.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(
+            play_next(guild=guild, voice_client=voice_client, channel=channel), bot.loop))
+        await channel.send(f"🎵 Now playing: **{next_song['title']}**")
     else:
-        await ctx.send("✅ Queue finished.")
+        await channel.send("✅ Queue finished.")
 
-@bot.command()
-async def play(ctx, *, query: str):
-    if not ctx.author.voice:
-        await ctx.send("❌ You need to be in a voice channel first!")
-        return
-    vc = ctx.voice_client
+async def handle_play(query, author, guild, voice_client, channel):
+    if not author.voice:
+        await channel.send("❌ You need to be in a voice channel first!"); return
+    vc = voice_client
     if not vc:
-        vc = await ctx.author.voice.channel.connect()
-    elif vc.channel != ctx.author.voice.channel:
-        await vc.move_to(ctx.author.voice.channel)
-
-    # Detect Spotify link and convert to search query
+        vc = await author.voice.channel.connect()
+    elif vc.channel != author.voice.channel:
+        await vc.move_to(author.voice.channel)
     if "open.spotify.com/track" in query:
-        await ctx.send("🎵 Spotify link detected, finding song...")
-        search_query = extract_spotify_query(query)
-        if not search_query:
-            await ctx.send("❌ Could not extract song info from Spotify link.")
-            return
-        await ctx.send(f"🔍 Searching SoundCloud for: **{search_query}**...")
-    else:
-        search_query = query
-        await ctx.send(f"🔍 Searching for: **{query}**...")
-
+        await channel.send("🎵 Spotify link detected, finding song...")
+        query = extract_spotify_query(query)
+        if not query:
+            await channel.send("❌ Could not extract song info from Spotify link."); return
+    await channel.send(f"🔍 Searching for: **{query}**...")
     loop = asyncio.get_event_loop()
     with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
         try:
-            info = await loop.run_in_executor(None, lambda: ydl.extract_info(search_query, download=False))
+            info = await loop.run_in_executor(None, lambda: ydl.extract_info(query, download=False))
             if "entries" in info: info = info["entries"][0]
             url   = info["url"]
             title = info.get("title", "Unknown")
         except Exception as e:
-            await ctx.send(f"❌ Could not find/play that.\n`{e}`")
-            return
-
-    gid = ctx.guild.id
+            await channel.send(f"❌ Could not find/play that.\n`{e}`"); return
+    gid = guild.id
     if gid not in music_queues: music_queues[gid] = []
     if vc.is_playing() or vc.is_paused():
         music_queues[gid].append({"url": url, "title": title})
-        await ctx.send(f"➕ Added to queue: **{title}** (position #{len(music_queues[gid])})")
+        await channel.send(f"➕ Added to queue: **{title}** (position #{len(music_queues[gid])})")
     else:
         music_queues[gid].insert(0, {"url": url, "title": title})
-        await play_next(ctx)
+        await play_next(guild=guild, voice_client=vc, channel=channel)
+
+# Prefix music
+@bot.command()
+async def play(ctx, *, query: str):
+    await handle_play(query, ctx.author, ctx.guild, ctx.voice_client, ctx.channel)
 
 @bot.command()
 async def skip(ctx):
     vc = ctx.voice_client
     if vc and vc.is_playing():
-        vc.stop()
-        await ctx.send("⏭️ Skipped.")
+        vc.stop(); await ctx.send("⏭️ Skipped.")
     else:
         await ctx.send("❌ Nothing is playing.")
 
@@ -348,8 +374,7 @@ async def stop(ctx):
     music_queues[ctx.guild.id] = []
     vc = ctx.voice_client
     if vc:
-        await vc.disconnect()
-        await ctx.send("⏹️ Stopped and left the voice channel.")
+        await vc.disconnect(); await ctx.send("⏹️ Stopped and left the voice channel.")
     else:
         await ctx.send("❌ Not in a voice channel.")
 
@@ -357,8 +382,7 @@ async def stop(ctx):
 async def queue(ctx):
     q = music_queues.get(ctx.guild.id, [])
     if not q:
-        await ctx.send("📭 Queue is empty.")
-        return
+        await ctx.send("📭 Queue is empty."); return
     embed = discord.Embed(title="🎶 Music Queue", color=discord.Color.blurple())
     for i, song in enumerate(q, 1):
         embed.add_field(name=f"#{i}", value=song["title"], inline=False)
@@ -372,8 +396,42 @@ async def nowplaying(ctx):
     else:
         await ctx.send("❌ Nothing is playing right now.")
 
+# Slash music
+@tree.command(name="play", description="Play a song from SoundCloud or Spotify link")
+@app_commands.describe(query="Song name or Spotify link")
+async def slash_play(interaction: discord.Interaction, query: str):
+    await interaction.response.defer()
+    await handle_play(query, interaction.user, interaction.guild, interaction.guild.voice_client, interaction.channel)
+
+@tree.command(name="skip", description="Skip the current song")
+async def slash_skip(interaction: discord.Interaction):
+    vc = interaction.guild.voice_client
+    if vc and vc.is_playing():
+        vc.stop(); await interaction.response.send_message("⏭️ Skipped.")
+    else:
+        await interaction.response.send_message("❌ Nothing is playing.")
+
+@tree.command(name="stop", description="Stop music and leave voice channel")
+async def slash_stop(interaction: discord.Interaction):
+    music_queues[interaction.guild.id] = []
+    vc = interaction.guild.voice_client
+    if vc:
+        await vc.disconnect(); await interaction.response.send_message("⏹️ Stopped.")
+    else:
+        await interaction.response.send_message("❌ Not in a voice channel.")
+
+@tree.command(name="queue", description="Show the music queue")
+async def slash_queue(interaction: discord.Interaction):
+    q = music_queues.get(interaction.guild.id, [])
+    if not q:
+        await interaction.response.send_message("📭 Queue is empty."); return
+    embed = discord.Embed(title="🎶 Music Queue", color=discord.Color.blurple())
+    for i, song in enumerate(q, 1):
+        embed.add_field(name=f"#{i}", value=song["title"], inline=False)
+    await interaction.response.send_message(embed=embed)
+
 # ============================================================
-#  SERVER & MEMBER COMMANDS
+#  SERVER & MEMBER — prefix
 # ============================================================
 @bot.command()
 async def membercount(ctx):
@@ -424,8 +482,7 @@ async def leaderboard(ctx):
     data = load_json(MSG_COUNT_FILE)
     gid  = str(ctx.guild.id)
     if gid not in data or not data[gid]:
-        await ctx.send("No message data yet!")
-        return
+        await ctx.send("No message data yet!"); return
     sorted_members = sorted(data[gid].items(), key=lambda x: x[1], reverse=True)[:10]
     embed = discord.Embed(title=f"🏆 Most Active — {ctx.guild.name}", color=discord.Color.gold(), timestamp=datetime.datetime.utcnow())
     for rank, (uid, count) in enumerate(sorted_members, 1):
@@ -435,16 +492,78 @@ async def leaderboard(ctx):
         embed.add_field(name=f"{medal} {name}", value=f"{count} messages", inline=False)
     await ctx.send(embed=embed)
 
+# SERVER & MEMBER — slash
+@tree.command(name="membercount", description="Show total member count")
+async def slash_membercount(interaction: discord.Interaction):
+    await interaction.response.send_message(f"👥 Total members: **{interaction.guild.member_count}**")
+
+@tree.command(name="memberinfo", description="Show info about a member")
+@app_commands.describe(member="The member to look up")
+async def slash_memberinfo(interaction: discord.Interaction, member: discord.Member = None):
+    member = member or interaction.user
+    roles  = [r.mention for r in member.roles if r.name != "@everyone"]
+    embed  = discord.Embed(title=f"Member Info — {member.name}", color=member.color, timestamp=datetime.datetime.utcnow())
+    embed.set_thumbnail(url=member.display_avatar.url)
+    embed.add_field(name="ID",              value=member.id,                              inline=True)
+    embed.add_field(name="Nickname",        value=member.nick or "None",                  inline=True)
+    embed.add_field(name="Joined Server",   value=member.joined_at.strftime("%Y-%m-%d"),  inline=True)
+    embed.add_field(name="Account Created", value=member.created_at.strftime("%Y-%m-%d"), inline=True)
+    embed.add_field(name="Roles",           value=" ".join(roles) if roles else "None",   inline=False)
+    warn_count = len(load_json(WARNINGS_FILE).get(str(interaction.guild.id), {}).get(str(member.id), []))
+    embed.add_field(name="Warnings", value=str(warn_count), inline=True)
+    await interaction.response.send_message(embed=embed)
+
+@tree.command(name="serverinfo", description="Show server info")
+async def slash_serverinfo(interaction: discord.Interaction):
+    guild = interaction.guild
+    embed = discord.Embed(title=guild.name, color=discord.Color.blurple(), timestamp=datetime.datetime.utcnow())
+    if guild.icon: embed.set_thumbnail(url=guild.icon.url)
+    embed.add_field(name="Owner",    value=guild.owner.mention,                  inline=True)
+    embed.add_field(name="Members",  value=guild.member_count,                   inline=True)
+    embed.add_field(name="Channels", value=len(guild.channels),                  inline=True)
+    embed.add_field(name="Roles",    value=len(guild.roles),                     inline=True)
+    embed.add_field(name="Boosts",   value=guild.premium_subscription_count,     inline=True)
+    embed.add_field(name="Created",  value=guild.created_at.strftime("%Y-%m-%d"),inline=True)
+    await interaction.response.send_message(embed=embed)
+
+@tree.command(name="leaderboard", description="Show most active members")
+async def slash_leaderboard(interaction: discord.Interaction):
+    data = load_json(MSG_COUNT_FILE)
+    gid  = str(interaction.guild.id)
+    if gid not in data or not data[gid]:
+        await interaction.response.send_message("No message data yet!"); return
+    sorted_members = sorted(data[gid].items(), key=lambda x: x[1], reverse=True)[:10]
+    embed = discord.Embed(title=f"🏆 Most Active — {interaction.guild.name}", color=discord.Color.gold(), timestamp=datetime.datetime.utcnow())
+    for rank, (uid, count) in enumerate(sorted_members, 1):
+        member = interaction.guild.get_member(int(uid))
+        name   = member.name if member else f"Unknown ({uid})"
+        medal  = ["🥇","🥈","🥉"][rank-1] if rank <= 3 else f"#{rank}"
+        embed.add_field(name=f"{medal} {name}", value=f"{count} messages", inline=False)
+    await interaction.response.send_message(embed=embed)
+
+@tree.command(name="invites", description="Show how many members someone has invited")
+@app_commands.describe(member="The member to check")
+async def slash_invites(interaction: discord.Interaction, member: discord.Member = None):
+    member = member or interaction.user
+    count  = load_json(INVITES_FILE).get(str(interaction.guild.id), {}).get(str(member.id), 0)
+    await interaction.response.send_message(f"📨 **{member.name}** has invited **{count}** member(s).")
+
+@tree.command(name="accountage", description="Show when a member's account was created")
+@app_commands.describe(member="The member to check")
+async def slash_accountage(interaction: discord.Interaction, member: discord.Member = None):
+    member = member or interaction.user
+    age    = (datetime.datetime.utcnow() - member.created_at.replace(tzinfo=None)).days
+    await interaction.response.send_message(f"🗓️ **{member.name}**'s account was created on **{member.created_at.strftime('%B %d, %Y')}** ({age // 365}y {(age % 365) // 30}m {age % 30}d ago).")
+
 # ============================================================
-#  MOD COMMANDS
+#  MOD COMMANDS — prefix
 # ============================================================
 @bot.command()
 @has_mod_role()
 async def mute(ctx, member: discord.Member, *, reason="No reason provided"):
     muted_role = discord.utils.get(ctx.guild.roles, name=MUTED_ROLE_NAME)
     if not muted_role:
-        await ctx.send(f"❌ No role named **{MUTED_ROLE_NAME}** found.")
-        return
+        await ctx.send(f"❌ No role named **{MUTED_ROLE_NAME}** found."); return
     await member.add_roles(muted_role, reason=reason)
     await ctx.send(f"🔇 {member.mention} has been muted. Reason: {reason}")
     await send_modlog(ctx.guild, "Mute", ctx.author, member, reason, "Until unmuted")
@@ -454,8 +573,7 @@ async def mute(ctx, member: discord.Member, *, reason="No reason provided"):
 async def unmute(ctx, member: discord.Member):
     muted_role = discord.utils.get(ctx.guild.roles, name=MUTED_ROLE_NAME)
     if not muted_role:
-        await ctx.send(f"❌ No role named **{MUTED_ROLE_NAME}** found.")
-        return
+        await ctx.send(f"❌ No role named **{MUTED_ROLE_NAME}** found."); return
     await member.remove_roles(muted_role)
     await ctx.send(f"🔊 {member.mention} has been unmuted.")
     await send_modlog(ctx.guild, "Unmute", ctx.author, member, "N/A", "N/A")
@@ -477,8 +595,7 @@ async def warnings(ctx, member: discord.Member = None):
     member = member or ctx.author
     warns  = load_json(WARNINGS_FILE).get(str(ctx.guild.id), {}).get(str(member.id), [])
     if not warns:
-        await ctx.send(f"✅ {member.mention} has no warnings.")
-        return
+        await ctx.send(f"✅ {member.mention} has no warnings."); return
     embed = discord.Embed(title=f"Warnings for {member.name}", color=discord.Color.orange())
     for i, w in enumerate(warns, 1):
         embed.add_field(name=f"Warning {i}", value=f"**Reason:** {w['reason']}\n**When:** {w['timestamp'][:10]}", inline=False)
@@ -499,14 +616,11 @@ async def clearwarnings(ctx, member: discord.Member):
 async def role(ctx, member: discord.Member, *, role_name: str):
     role_obj = discord.utils.get(ctx.guild.roles, name=role_name)
     if not role_obj:
-        await ctx.send(f"❌ Role **{role_name}** not found.")
-        return
+        await ctx.send(f"❌ Role **{role_name}** not found."); return
     if role_obj in member.roles:
-        await member.remove_roles(role_obj)
-        await ctx.send(f"➖ Removed **{role_name}** from {member.mention}.")
+        await member.remove_roles(role_obj); await ctx.send(f"➖ Removed **{role_name}** from {member.mention}.")
     else:
-        await member.add_roles(role_obj)
-        await ctx.send(f"➕ Added **{role_name}** to {member.mention}.")
+        await member.add_roles(role_obj); await ctx.send(f"➕ Added **{role_name}** to {member.mention}.")
 
 @bot.command()
 @has_mod_role()
@@ -524,57 +638,147 @@ async def ban(ctx, member: discord.Member, *, reason="No reason provided"):
 
 @bot.command()
 async def timeout(ctx, member: discord.Member, duration: str, *, reason="No reason provided"):
-    can_use = any(role.name in MOD_ROLES for role in ctx.author.roles) or \
-              any(role.name in TIMEOUT_ROLES for role in ctx.author.roles)
+    can_use = any(role.name in MOD_ROLES for role in ctx.author.roles) or any(role.name in TIMEOUT_ROLES for role in ctx.author.roles)
     if not can_use:
-        await ctx.send("❌ You don't have permission to use this command.")
-        return
+        await ctx.send("❌ You don't have permission."); return
     units = {"m": 1, "h": 60, "y": 525600}
     unit  = duration[-1].lower()
     if unit not in units:
-        await ctx.send("❌ Use format like `1m`, `2h`, or `1y`")
-        return
-    try:
-        amount = int(duration[:-1])
+        await ctx.send("❌ Use format like `1m`, `2h`, or `1y`"); return
+    try: amount = int(duration[:-1])
     except ValueError:
-        await ctx.send("❌ Use format like `1m`, `2h`, or `1y`")
-        return
-    minutes = amount * units[unit]
-    await member.timeout(datetime.timedelta(minutes=minutes), reason=reason)
+        await ctx.send("❌ Use format like `1m`, `2h`, or `1y`"); return
+    await member.timeout(datetime.timedelta(minutes=amount * units[unit]), reason=reason)
     await ctx.send(f"⏱️ {member.mention} timed out for **{duration}**. Reason: {reason}")
     await send_modlog(ctx.guild, "Timeout", ctx.author, member, reason, duration)
 
 @bot.command()
 async def removetimeout(ctx, member: discord.Member):
-    can_use = any(role.name in MOD_ROLES for role in ctx.author.roles) or \
-              any(role.name in TIMEOUT_ROLES for role in ctx.author.roles)
+    can_use = any(role.name in MOD_ROLES for role in ctx.author.roles) or any(role.name in TIMEOUT_ROLES for role in ctx.author.roles)
     if not can_use:
-        await ctx.send("❌ You don't have permission to use this command.")
-        return
+        await ctx.send("❌ You don't have permission."); return
     await member.timeout(None)
     await ctx.send(f"✅ Timeout removed for {member.mention}.")
     await send_modlog(ctx.guild, "Timeout Removed", ctx.author, member, "N/A", "N/A")
 
-# ============================================================
-#  MODLOGS COMMAND
-# ============================================================
 @bot.command()
 async def modlogs(ctx, member: discord.Member = None):
     member  = member or ctx.author
-    logs    = load_json(MODLOG_FILE)
-    entries = logs.get(str(ctx.guild.id), {}).get(str(member.id), [])
+    entries = load_json(MODLOG_FILE).get(str(ctx.guild.id), {}).get(str(member.id), [])
     if not entries:
-        await ctx.send(f"✅ No mod actions found for {member.mention}.")
-        return
+        await ctx.send(f"✅ No mod actions found for {member.mention}."); return
     embed = discord.Embed(title=f"📋 Mod Logs — {member.name}", color=discord.Color.blurple(), timestamp=datetime.datetime.utcnow())
     for i, e in enumerate(entries[-10:], 1):
-        embed.add_field(
-            name  = f"{i}. {e['action']} — {e['timestamp'][:10]}",
-            value = f"**By:** {e['moderator']} | **Reason:** {e['reason']} | **Duration:** {e['duration']}",
-            inline= False
-        )
+        embed.add_field(name=f"{i}. {e['action']} — {e['timestamp'][:10]}", value=f"**By:** {e['moderator']} | **Reason:** {e['reason']} | **Duration:** {e['duration']}", inline=False)
     embed.set_footer(text=f"Showing last {min(len(entries), 10)} of {len(entries)} entries")
     await ctx.send(embed=embed)
+
+# MOD — slash
+@tree.command(name="mute", description="Mute a member (mod only)")
+@app_commands.describe(member="Member to mute", reason="Reason for mute")
+async def slash_mute(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+    if not slash_is_mod(interaction):
+        await interaction.response.send_message("❌ No permission.", ephemeral=True); return
+    muted_role = discord.utils.get(interaction.guild.roles, name=MUTED_ROLE_NAME)
+    if not muted_role:
+        await interaction.response.send_message(f"❌ No role named **{MUTED_ROLE_NAME}** found."); return
+    await member.add_roles(muted_role, reason=reason)
+    await interaction.response.send_message(f"🔇 {member.mention} has been muted. Reason: {reason}")
+    await send_modlog(interaction.guild, "Mute", interaction.user, member, reason, "Until unmuted")
+
+@tree.command(name="unmute", description="Unmute a member (mod only)")
+@app_commands.describe(member="Member to unmute")
+async def slash_unmute(interaction: discord.Interaction, member: discord.Member):
+    if not slash_is_mod(interaction):
+        await interaction.response.send_message("❌ No permission.", ephemeral=True); return
+    muted_role = discord.utils.get(interaction.guild.roles, name=MUTED_ROLE_NAME)
+    if not muted_role:
+        await interaction.response.send_message(f"❌ No role named **{MUTED_ROLE_NAME}** found."); return
+    await member.remove_roles(muted_role)
+    await interaction.response.send_message(f"🔊 {member.mention} has been unmuted.")
+    await send_modlog(interaction.guild, "Unmute", interaction.user, member, "N/A", "N/A")
+
+@tree.command(name="warn", description="Warn a member (mod only)")
+@app_commands.describe(member="Member to warn", reason="Reason for warning")
+async def slash_warn(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+    if not slash_is_mod(interaction):
+        await interaction.response.send_message("❌ No permission.", ephemeral=True); return
+    warnings = load_json(WARNINGS_FILE)
+    gid, uid = str(interaction.guild.id), str(member.id)
+    if gid not in warnings: warnings[gid] = {}
+    if uid not in warnings[gid]: warnings[gid][uid] = []
+    warnings[gid][uid].append({"reason": reason, "moderator": str(interaction.user.id), "timestamp": str(datetime.datetime.utcnow())})
+    save_json(WARNINGS_FILE, warnings)
+    await interaction.response.send_message(f"⚠️ {member.mention} warned. Reason: {reason} (Total: {len(warnings[gid][uid])})")
+    await send_modlog(interaction.guild, "Warn", interaction.user, member, reason, "N/A")
+
+@tree.command(name="warnings", description="Show warnings for a member")
+@app_commands.describe(member="Member to check")
+async def slash_warnings(interaction: discord.Interaction, member: discord.Member = None):
+    member = member or interaction.user
+    warns  = load_json(WARNINGS_FILE).get(str(interaction.guild.id), {}).get(str(member.id), [])
+    if not warns:
+        await interaction.response.send_message(f"✅ {member.mention} has no warnings."); return
+    embed = discord.Embed(title=f"Warnings for {member.name}", color=discord.Color.orange())
+    for i, w in enumerate(warns, 1):
+        embed.add_field(name=f"Warning {i}", value=f"**Reason:** {w['reason']}\n**When:** {w['timestamp'][:10]}", inline=False)
+    await interaction.response.send_message(embed=embed)
+
+@tree.command(name="kick", description="Kick a member (mod only)")
+@app_commands.describe(member="Member to kick", reason="Reason")
+async def slash_kick(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+    if not slash_is_mod(interaction):
+        await interaction.response.send_message("❌ No permission.", ephemeral=True); return
+    await member.kick(reason=reason)
+    await interaction.response.send_message(f"👢 {member.mention} was kicked. Reason: {reason}")
+    await send_modlog(interaction.guild, "Kick", interaction.user, member, reason, "N/A")
+
+@tree.command(name="ban", description="Ban a member (mod only)")
+@app_commands.describe(member="Member to ban", reason="Reason")
+async def slash_ban(interaction: discord.Interaction, member: discord.Member, reason: str = "No reason provided"):
+    if not slash_is_mod(interaction):
+        await interaction.response.send_message("❌ No permission.", ephemeral=True); return
+    await member.ban(reason=reason)
+    await interaction.response.send_message(f"🔨 {member.mention} was banned. Reason: {reason}")
+    await send_modlog(interaction.guild, "Ban", interaction.user, member, reason, "Permanent")
+
+@tree.command(name="timeout", description="Timeout a member (1m, 2h, 1y)")
+@app_commands.describe(member="Member to timeout", duration="Duration e.g. 10m, 2h, 1y", reason="Reason")
+async def slash_timeout(interaction: discord.Interaction, member: discord.Member, duration: str, reason: str = "No reason provided"):
+    if not slash_can_timeout(interaction):
+        await interaction.response.send_message("❌ No permission.", ephemeral=True); return
+    units = {"m": 1, "h": 60, "y": 525600}
+    unit  = duration[-1].lower()
+    if unit not in units:
+        await interaction.response.send_message("❌ Use format like `1m`, `2h`, or `1y`"); return
+    try: amount = int(duration[:-1])
+    except ValueError:
+        await interaction.response.send_message("❌ Use format like `1m`, `2h`, or `1y`"); return
+    await member.timeout(datetime.timedelta(minutes=amount * units[unit]), reason=reason)
+    await interaction.response.send_message(f"⏱️ {member.mention} timed out for **{duration}**. Reason: {reason}")
+    await send_modlog(interaction.guild, "Timeout", interaction.user, member, reason, duration)
+
+@tree.command(name="removetimeout", description="Remove timeout from a member")
+@app_commands.describe(member="Member to untimeout")
+async def slash_removetimeout(interaction: discord.Interaction, member: discord.Member):
+    if not slash_can_timeout(interaction):
+        await interaction.response.send_message("❌ No permission.", ephemeral=True); return
+    await member.timeout(None)
+    await interaction.response.send_message(f"✅ Timeout removed for {member.mention}.")
+    await send_modlog(interaction.guild, "Timeout Removed", interaction.user, member, "N/A", "N/A")
+
+@tree.command(name="modlogs", description="Show mod action history for a member")
+@app_commands.describe(member="Member to check")
+async def slash_modlogs(interaction: discord.Interaction, member: discord.Member = None):
+    member  = member or interaction.user
+    entries = load_json(MODLOG_FILE).get(str(interaction.guild.id), {}).get(str(member.id), [])
+    if not entries:
+        await interaction.response.send_message(f"✅ No mod actions found for {member.mention}."); return
+    embed = discord.Embed(title=f"📋 Mod Logs — {member.name}", color=discord.Color.blurple(), timestamp=datetime.datetime.utcnow())
+    for i, e in enumerate(entries[-10:], 1):
+        embed.add_field(name=f"{i}. {e['action']} — {e['timestamp'][:10]}", value=f"**By:** {e['moderator']} | **Reason:** {e['reason']} | **Duration:** {e['duration']}", inline=False)
+    embed.set_footer(text=f"Showing last {min(len(entries), 10)} of {len(entries)} entries")
+    await interaction.response.send_message(embed=embed)
 
 # ============================================================
 #  ERROR HANDLING
