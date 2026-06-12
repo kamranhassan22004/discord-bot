@@ -161,12 +161,16 @@ async def on_member_join(member):
         pass
     channel = discord.utils.get(guild.text_channels, name=WELCOME_CHANNEL_NAME)
     if channel:
-        invite_line = f"\nInvited by **{inviter.name}**" if inviter else ""
-        acct_age    = (datetime.datetime.utcnow() - member.created_at.replace(tzinfo=None)).days
+        signup_channel = discord.utils.get(guild.text_channels, name="⚜️-glitchy-sign-up")
+        signup_mention = signup_channel.mention if signup_channel else "#⚜️-glitchy-sign-up"
         embed = discord.Embed(
-            title       = f"Welcome to {guild.name}! 🎉",
-            description = f"Hey {member.mention}, glad you're here!\nYou're member **#{guild.member_count}**{invite_line}\nAccount created **{acct_age}** days ago.",
-            color=discord.Color.green(), timestamp=datetime.datetime.utcnow()
+            title       = f"Welcome To Exposure Club {member.name}!",
+            description = (
+                f"You are member **#{guild.member_count}**\n\n"
+                f"Check {signup_mention} to get **$10 bonus** on starting up! 💰"
+            ),
+            color     = discord.Color.green(),
+            timestamp = datetime.datetime.utcnow()
         )
         embed.set_thumbnail(url=member.display_avatar.url)
         await channel.send(embed=embed)
