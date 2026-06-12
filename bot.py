@@ -165,14 +165,14 @@ async def on_member_join(member):
         signup_channel = discord.utils.get(guild.text_channels, name="⚜️-glitchy-sign-up")
         signup_mention = signup_channel.mention if signup_channel else "#⚜️-glitchy-sign-up"
         embed = discord.Embed(
-            title       = f"Welcome To Exposure Club {member.mention}!",
-            description = (
-                f"You are member **#{guild.member_count}**\n\n"
-                f"Check {signup_mention} to get **$10 bonus** on starting up! 💰"
-            ),
-            color     = discord.Color.green(),
-            timestamp = datetime.datetime.utcnow()
-        )
+    title       = f"Welcome To Exposure Club {member.name}!",
+    description = (
+        f"Hey {member.mention}, you are member **#{guild.member_count}**\n\n"
+        f"Check {signup_mention} to get **$10 bonus** on starting up! 💰"
+    ),
+    color     = discord.Color.green(),
+    timestamp = datetime.datetime.utcnow()
+)
         embed.set_thumbnail(url=member.display_avatar.url)
         await channel.send(embed=embed)
 
