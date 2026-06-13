@@ -123,7 +123,7 @@ async def on_ready():
     print("Slash commands synced!")
     await bot.change_presence(
         activity=discord.CustomActivity(
-            name="Performance Marketing Community 🔥"
+            name="T.me/affcooker"
         )
     )
     for guild in bot.guilds:
