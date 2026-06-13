@@ -121,6 +121,11 @@ async def on_ready():
     print(f"Logged in as {bot.user} ({bot.user.id})")
     await tree.sync()
     print("Slash commands synced!")
+    await bot.change_presence(
+        activity=discord.CustomActivity(
+            name="Performance Marketing Community 🔥"
+        )
+    )
     for guild in bot.guilds:
         try:
             invites = await guild.fetch_invites()
