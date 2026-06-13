@@ -123,7 +123,7 @@ async def on_ready():
     print("Slash commands synced!")
     await bot.change_presence(
         activity=discord.CustomActivity(
-            name="Performance Marketing Community 🔥"
+            name="T.me/affcooker"
         )
     )
     for guild in bot.guilds:
@@ -308,12 +308,12 @@ YDL_OPTIONS = {
     "default_search": "scsearch",
     "source_address": "0.0.0.0",
     "prefer_ffmpeg" : True,
+    "no_warnings"   : True,
 }
 FFMPEG_OPTIONS = {
-    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-    "options"       : "-vn -b:a 320k",
+    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -re",
+    "options"       : "-vn",
 }
-
 async def play_next(guild=None, voice_client=None, channel=None):
     gid = guild.id
     if not music_queues.get(gid):
@@ -330,9 +330,22 @@ async def play_next(guild=None, voice_client=None, channel=None):
             await channel.send(f"❌ Error playing **{next_song['title']}**, skipping...\n`{e}`")
             await play_next(guild=guild, voice_client=voice_client, channel=channel)
             return
-    source = await discord.FFmpegOpusAudio.from_probe(url, **FFMPEG_OPTIONS)
-    voice_client.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(
-        play_next(guild=guild, voice_client=voice_client, channel=channel), bot.loop))
+
+    try:
+        source = await discord.FFmpegOpusAudio.from_probe(url, **FFMPEG_OPTIONS)
+    except Exception as e:
+        await channel.send(f"❌ FFmpeg error, skipping **{next_song['title']}**...\n`{e}`")
+        await play_next(guild=guild, voice_client=voice_client, channel=channel)
+        return
+
+    def after_play(error):
+        if error:
+            print(f"Player error: {error}")
+        asyncio.run_coroutine_threadsafe(
+            play_next(guild=guild, voice_client=voice_client, channel=channel), bot.loop
+        )
+
+    voice_client.play(source, after=after_play)
     await channel.send(f"🎵 Now playing: **{next_song['title']}**")
 
 async def handle_play(query, author, guild, voice_client, channel):
