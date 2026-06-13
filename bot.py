@@ -308,7 +308,6 @@ YDL_OPTIONS = {
     "default_search": "scsearch",
     "source_address": "0.0.0.0",
     "prefer_ffmpeg" : True,
-    "extractor_args": {"soundcloud": {"formats": ["mp3_128"]}},
 }
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
