@@ -302,12 +302,13 @@ async def slash_ar_list(interaction: discord.Interaction):
 #  MUSIC
 # ============================================================
 YDL_OPTIONS = {
-    "format"        : "140/bestaudio/best",
+    "format"        : "bestaudio/best",
     "noplaylist"    : True,
     "quiet"         : True,
-    "default_search": "ytsearch",
+    "default_search": "scsearch",
     "source_address": "0.0.0.0",
-    "cookiefile"    : "/app/cookies.txt",
+    "prefer_ffmpeg" : True,
+    "extractor_args": {"soundcloud": {"formats": ["mp3_128"]}},
 }
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
