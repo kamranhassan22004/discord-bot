@@ -302,12 +302,11 @@ async def slash_ar_list(interaction: discord.Interaction):
 #  MUSIC
 # ============================================================
 YDL_OPTIONS = {
-    "format"        : "bestaudio/best[ext=webm]/bestaudio/best",
+    "format"        : "140/bestaudio/best",
     "noplaylist"    : True,
     "quiet"         : True,
     "default_search": "ytsearch",
     "source_address": "0.0.0.0",
-    "prefer_ffmpeg" : True,
     "cookiefile"    : "/app/cookies.txt",
 }
 FFMPEG_OPTIONS = {
