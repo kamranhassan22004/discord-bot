@@ -1,0 +1,26 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+claude.ai	FALSE	/	TRUE	1807264647	anthropic-device-id	4c4fe52b-0af6-430b-b93b-b198354ad8fe
+claude.ai	FALSE	/	TRUE	1795543071	_fbp	fb.1.1760983071382.70073444386089110
+.claude.ai	TRUE	/	TRUE	1812880651	CH-prefers-color-scheme	light
+.claude.ai	TRUE	/	FALSE	1795543073	__ssid	314094b87e77e3a0e43cbf7bbbb71e9
+claude.ai	FALSE	/	FALSE	1792088548	g_state	{"i_l":0,"i_ll":1776536543056,"i_e":{"enable_itp_optimization":23},"i_et":1776536543039}
+.claude.ai	TRUE	/	TRUE	1812880712	user-sidebar-visible-on-load	true
+.claude.ai	TRUE	/	TRUE	1804677728	intercom-device-id-lupk8zyo	133fcd49-1058-450f-822a-94ea4ab0e6c8
+.claude.ai	TRUE	/	FALSE	1808073188	ajs_user_id	9388b8de-1135-439b-914f-1cf1a734a3b4
+.claude.ai	TRUE	/	FALSE	1786300552	_gcl_au	1.1.1152972283.1778524552
+.claude.ai	TRUE	/	TRUE	1812880650	ajs_anonymous_id	claudeai.v1.e1ab6d16-500a-472d-99d4-1ed367aac477
+.claude.ai	TRUE	/	TRUE	1783742250	sessionKey	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
+.claude.ai	TRUE	/	TRUE	1783742250	sessionKeyLC	1781288862020
+.claude.ai	TRUE	/	TRUE	1783880862	routingHint	sk-ant-rh-eyJ0eXAiOiAiSldUIiwgImFsZyI6ICJFUzI1NiIsICJraWQiOiAiN0MxcWFPRnhqdWxaUjRFQnNuNk1UeUZGNWdDV2JHbFpNVDR2RklrRFFpbyJ9.eyJzdWIiOiAiOTI1YTQxN2QtMTFiMi00OGIzLThjMDctYmQyODliMjFiMGIwIiwgImlhdCI6IDE3ODEyODg4NjIsICJpc3MiOiAiY2xhdWRlLWFpLXJvdXRpbmciLCAib25ib2FyZGluZ19jb21wbGV0ZSI6IHRydWUsICJwaG9uZV92ZXJpZmllZCI6IGZhbHNlLCAiYWdlX3ZlcmlmaWVkIjogdHJ1ZSwgIm5hbWUiOiAia2FtaSJ9.fI8zFMxhgfPhNwVP90bdtcEvVWh0I0JdabwTa1CJ17UWPGHFe8sGNpeBncKdQgX7mXQfb1pm32JkevEDJby-FQ
+.claude.ai	TRUE	/	TRUE	1812880651	lastActiveOrg	fc3430fa-2478-44ae-a7dd-f82b51c01bc6
+claude.ai	FALSE	/	TRUE	1781387847	activitySessionId	c59a8c05-20be-43ac-b53f-a539901b917e
+claude.ai	FALSE	/	TRUE	0	ion-vk	fa05ab20-49f6-4ad6-b7c3-7b08e90def78
+.claude.ai	TRUE	/	TRUE	1812880712	user-sidebar-pinned	true
+.claude.ai	TRUE	/	TRUE	1782557329	intercom-session-lupk8zyo	UzJvTmJ1Q3A4RmdCalBsU1RMU0RpdEU2MDJUd0p5em9WZFdjNDBkU1FibEh6M1d1NlF4UEpCQWE0TThCbmhPSzVRcWhLLzFTbVBIQ2Yyemh4WGFEUkdaZzZFbjRldHMzRHlnRm5wWDM4b2ZBRHRBQ09Ja2NYdVNYM0FqWVBwbzdLUi9pUFREOXJ3M1ZWaldCSVlOUGhnRHpmV0FhdGUxdWtrUUsyc3hiQnRESlc0UXBDbmlpY3pHdUMyTlZBN09tRWdpb2ErRkcyKzZKandMNVRpVGY3ck1SUmxTU1haNUVrU01VUlNic3NQQi85Nlptc0FFN2RXVlJsWldTekdWSHVPOWhIbk14ZU5EQjJFaVFYM0RkS2pwZENtSnNoMS85ZHQzb1JtU3k3Y0k9LS1WTlRzbUU4VzhtdFNSV1JMdlNaOGdRPT0=--a5addabcd5e687d991a9c4333c11a770aec5775e
+.claude.ai	TRUE	/	TRUE	1781351691	__cf_bm	GTTMR2ecoHMK7_0i69byYoMhHsXvkikVMeYwYYnmsu4-1781349892.0238142-1.0.1.1-AhD05wZYO1tMAmXUJAiameXsp4mqW3YBn1OTyyq98Mgc8.sQ.A_iSKX1gUr_mFpW.GOWtVS8SSVDi981Z0j6a4qo5ppMAC3t73UvLo7GUpwLfKBV1y9gd6dC7isgpUVZ
+.claude.ai	TRUE	/	TRUE	0	_cfuvid	h04NmCFx0WTSrXDSnYZDIONx_wDMLwCa9XzWrfRBLqY-1781349892.0238142-1.0.1.1-aejnM0R_ilFdilmmnR.NjMQ9Ju2TWXXGP5rGly2GY3k
+claude.ai	FALSE	/	FALSE	1812885898	_dd_s	aid=e87f1c0e-60db-4880-bced-1524255da069&rum=2&id=257fa32b-0d7e-4732-a151-3c0c54526a00&created=1781344650243&expire=1781350798521
+.claude.ai	TRUE	/	TRUE	1812880653	cf_clearance	thpAFFof8FhBlC5_nTW4A8IChggzow2CqpmEykkPikw-1781344653-1.2.1.1-0vpIRdazp3T5bX_QRGAMZa0dZf5uX2FzOMFVfWRsAdOTDCudQDC8_2hiYoRq.dmH1p7FYOffdA8Fy0qAEzEKqfotIUEJuVpx1yH8Mw8Pdb0rjFQhsxwZt6RDaJEaWutkPioyNR_nbvVzKTVbLgzKbcCATWa_kf1PkbUHkzGagrkZavqGoU0IE5Y_XSZiDel6GKVIsxckTj4gXqlRWOFFrxbkwpFuPDzwdVxNdbMIrok.8HFZXiZc0YWfsGeEtbFU8dBTqaln_p8IpOuPbSi_8DYWEq3pGifae2.rkBGL2WQtp7XHqa3PVe3U9dK3nnRye1fej4E1TCFxA0QeK3Q3PQ
