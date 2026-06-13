@@ -309,20 +309,26 @@ FFMPEG_OPTIONS = {
     "options"       : "-vn -b:a 320k",
 }
 
-async def play_next(ctx=None, interaction=None, guild=None, voice_client=None, channel=None):
-    if ctx:
-        guild        = ctx.guild
-        voice_client = ctx.voice_client
-        channel      = ctx.channel
+async def play_next(guild=None, voice_client=None, channel=None):
     gid = guild.id
-    if music_queues.get(gid):
-        next_song = music_queues[gid].pop(0)
-        source = await discord.FFmpegOpusAudio.from_probe(next_song["url"], **FFMPEG_OPTIONS)
-        voice_client.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(
-            play_next(guild=guild, voice_client=voice_client, channel=channel), bot.loop))
-        await channel.send(f"🎵 Now playing: **{next_song['title']}**")
-    else:
+    if not music_queues.get(gid):
         await channel.send("✅ Queue finished.")
+        return
+    next_song = music_queues[gid].pop(0)
+    loop = asyncio.get_event_loop()
+    with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+        try:
+            info = await loop.run_in_executor(None, lambda: ydl.extract_info(next_song["query"], download=False))
+            if "entries" in info: info = info["entries"][0]
+            url = info["url"]
+        except Exception as e:
+            await channel.send(f"❌ Error playing **{next_song['title']}**, skipping...\n`{e}`")
+            await play_next(guild=guild, voice_client=voice_client, channel=channel)
+            return
+    source = await discord.FFmpegOpusAudio.from_probe(url, **FFMPEG_OPTIONS)
+    voice_client.play(source, after=lambda e: asyncio.run_coroutine_threadsafe(
+        play_next(guild=guild, voice_client=voice_client, channel=channel), bot.loop))
+    await channel.send(f"🎵 Now playing: **{next_song['title']}**")
 
 async def handle_play(query, author, guild, voice_client, channel):
     if not author.voice:
@@ -343,17 +349,16 @@ async def handle_play(query, author, guild, voice_client, channel):
         try:
             info = await loop.run_in_executor(None, lambda: ydl.extract_info(query, download=False))
             if "entries" in info: info = info["entries"][0]
-            url   = info["url"]
             title = info.get("title", "Unknown")
         except Exception as e:
             await channel.send(f"❌ Could not find/play that.\n`{e}`"); return
     gid = guild.id
     if gid not in music_queues: music_queues[gid] = []
     if vc.is_playing() or vc.is_paused():
-        music_queues[gid].append({"url": url, "title": title})
+        music_queues[gid].append({"query": query, "title": title})
         await channel.send(f"➕ Added to queue: **{title}** (position #{len(music_queues[gid])})")
     else:
-        music_queues[gid].insert(0, {"url": url, "title": title})
+        music_queues[gid].insert(0, {"query": query, "title": title})
         await play_next(guild=guild, voice_client=vc, channel=channel)
 
 # Prefix music
